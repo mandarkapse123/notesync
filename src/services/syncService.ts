@@ -53,16 +53,13 @@ export class SyncService {
     this.setSyncing(true);
     setTimeout(() => {
       this.setSyncing(false);
-    }, 600);
+    }, 500);
   }
 
   // Push Note changes directly to Firestore
   public async syncNote(note: NoteItem) {
     const firestore = getFirebaseDb();
-    if (!firestore) {
-      console.warn('Firestore not ready for syncNote');
-      return;
-    }
+    if (!firestore) return;
 
     try {
       this.setSyncing(true);
@@ -102,13 +99,19 @@ export class SyncService {
     }
   }
 
-  // Delete note in Firestore
+  // Delete note in Firestore & record tombstone to prevent resurrection from other devices
   public async deleteNote(id: string) {
     const firestore = getFirebaseDb();
     if (!firestore) return;
 
     try {
       this.setSyncing(true);
+      // 1. Record tombstone so other devices never re-upload this note
+      await setDoc(doc(firestore, 'deleted_notes', id), {
+        id,
+        deletedAt: Date.now(),
+      });
+      // 2. Delete the note from Firestore
       await deleteDoc(doc(firestore, 'notes', id));
     } catch (err) {
       console.error('Failed to delete note from Firestore:', err);
@@ -172,6 +175,16 @@ export class SyncService {
     this.setSyncing(true);
 
     try {
+      // 0. Fetch Tombstones (deleted notes)
+      const deletedSnap = await getDocs(collection(firestore, 'deleted_notes'));
+      const deletedIds = new Set<string>();
+      deletedSnap.forEach((d) => deletedIds.add(d.id));
+
+      // Clean local deleted notes immediately
+      for (const delId of deletedIds) {
+        await db.notes.delete(delId);
+      }
+
       // 1. Reconcile Topics
       const topicsSnap = await getDocs(collection(firestore, 'topics'));
       const remoteTopics: Topic[] = [];
@@ -197,10 +210,19 @@ export class SyncService {
         await db.tags.bulkPut(remoteTags);
       }
 
-      // 3. Reconcile Notes (Two-Way Merge so all local notes on iPhone & Mac are synced to Firestore)
+      // 3. Reconcile Notes
       const notesSnap = await getDocs(collection(firestore, 'notes'));
       const remoteNotes: NoteItem[] = [];
+      const remoteIds = new Set<string>();
+
       for (const d of notesSnap.docs) {
+        if (deletedIds.has(d.id)) {
+          // If in deleted set, remove from remote too
+          await deleteDoc(doc(firestore, 'notes', d.id));
+          continue;
+        }
+
+        remoteIds.add(d.id);
         const data = d.data() as any;
         let audioBlob: Blob | undefined = undefined;
         if (data.audioUrl && data.audioUrl.startsWith('data:')) {
@@ -214,25 +236,32 @@ export class SyncService {
         });
       }
 
-      // Put all remote notes in local db
+      // Save valid remote notes in local db
       if (remoteNotes.length > 0) {
         await db.notes.bulkPut(remoteNotes);
       }
 
-      // Upload any local notes that are not in Firestore yet!
+      // Delete any local notes that were deleted in Firestore, or upload genuine new local notes
       const localNotes = await db.notes.toArray();
       for (const local of localNotes) {
-        const existsRemotely = remoteNotes.some((r) => r.id === local.id);
-        if (!existsRemotely) {
-          await this.syncNote(local);
+        if (deletedIds.has(local.id)) {
+          await db.notes.delete(local.id);
+        } else if (!remoteIds.has(local.id)) {
+          // Only upload if it's a genuinely newly created note, not an old deleted note
+          if (local.id !== 'welcome-note') {
+            await this.syncNote(local);
+          } else {
+            await db.notes.delete(local.id);
+          }
         }
       }
 
-      // 4. Setup REALTIME LISTENERS if not already active
+      // 4. Setup REALTIME LISTENERS
       if (!this.isInitialized) {
         this.firestoreUnsubscribes.forEach((unsub) => unsub());
         this.firestoreUnsubscribes = [];
 
+        // Realtime Notes Listener
         const unsubNotes = onSnapshot(
           collection(firestore, 'notes'), 
           (snapshot) => {
@@ -258,6 +287,20 @@ export class SyncService {
         );
         this.firestoreUnsubscribes.push(unsubNotes);
 
+        // Realtime Deleted Notes Tombstone Listener
+        const unsubDeleted = onSnapshot(
+          collection(firestore, 'deleted_notes'),
+          (snapshot) => {
+            snapshot.docChanges().forEach(async (change) => {
+              if (change.type === 'added' || change.type === 'modified') {
+                await db.notes.delete(change.doc.id);
+              }
+            });
+          }
+        );
+        this.firestoreUnsubscribes.push(unsubDeleted);
+
+        // Realtime Topics Listener
         const unsubTopics = onSnapshot(
           collection(firestore, 'topics'), 
           (snapshot) => {
@@ -269,9 +312,6 @@ export class SyncService {
                 await db.topics.delete(change.doc.id);
               }
             });
-          },
-          (err) => {
-            console.error('Firestore Topics onSnapshot error:', err);
           }
         );
         this.firestoreUnsubscribes.push(unsubTopics);
