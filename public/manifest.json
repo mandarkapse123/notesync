@@ -1,0 +1,18 @@
+{
+  "short_name": "NoteSync",
+  "name": "NoteSync - Quick Capture & Voice Notes",
+  "description": "Minimal, modern personal note-taking app with voice notes, speech-to-text, and Kanban board.",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#F2F2F7",
+  "theme_color": "#FFCC00",
+  "display": "standalone",
+  "orientation": "portrait"
+}
