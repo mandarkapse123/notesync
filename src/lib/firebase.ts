@@ -11,10 +11,30 @@ export interface FirebaseConfig {
   appId: string;
 }
 
+// Your default Firebase project configuration (Auto-connects on all devices without typing!)
+const DEFAULT_FIREBASE_CONFIG: FirebaseConfig = {
+  apiKey: "AIzaSyAZZ4EJ0TOFYQrtIA73kAcbqlcT8rmQ3Q0",
+  authDomain: "notesync-414db.firebaseapp.com",
+  projectId: "notesync-414db",
+  storageBucket: "notesync-414db.firebasestorage.app",
+  messagingSenderId: "668237567618",
+  appId: "1:668237567618:web:04cfe7f6d98c1b06bc869b"
+};
+
 const STORAGE_KEY_CONFIG = 'notesync_firebase_config';
 
 export function getStoredFirebaseConfig(): FirebaseConfig | null {
-  // Check environment variables first
+  // 1. Check if user overrode with custom config in localStorage
+  const stored = localStorage.getItem(STORAGE_KEY_CONFIG);
+  if (stored) {
+    try {
+      return JSON.parse(stored);
+    } catch (e) {
+      console.error('Invalid stored Firebase config', e);
+    }
+  }
+
+  // 2. Check environment variables
   const envKey = (import.meta as any).env?.VITE_FIREBASE_API_KEY;
   const envProjectId = (import.meta as any).env?.VITE_FIREBASE_PROJECT_ID;
 
@@ -29,17 +49,8 @@ export function getStoredFirebaseConfig(): FirebaseConfig | null {
     };
   }
 
-  // Check localStorage
-  const stored = localStorage.getItem(STORAGE_KEY_CONFIG);
-  if (stored) {
-    try {
-      return JSON.parse(stored);
-    } catch (e) {
-      console.error('Invalid stored Firebase config', e);
-    }
-  }
-
-  return null;
+  // 3. Default to your pre-configured Firebase project automatically!
+  return DEFAULT_FIREBASE_CONFIG;
 }
 
 export function saveFirebaseConfig(config: FirebaseConfig | null) {
