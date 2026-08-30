@@ -18,8 +18,13 @@ class NotesSyncDatabase extends Dexie {
 
 export const db = new NotesSyncDatabase();
 
-// Seed initial default topics and welcome note if empty
+// Seed initial default topics and welcome note ONCE only on first install
 export async function seedInitialDataIfNeeded() {
+  const SEED_KEY = 'notesync_initial_seed_completed_v2';
+  if (localStorage.getItem(SEED_KEY)) {
+    return;
+  }
+
   const topicCount = await db.topics.count();
   if (topicCount === 0) {
     const defaultTopics: Topic[] = [
@@ -35,23 +40,10 @@ export async function seedInitialDataIfNeeded() {
       { id: 'tag-voice', name: 'voice', lastUsedAt: Date.now() - 2000 },
     ];
     await db.tags.bulkAdd(defaultTags);
-
-    const welcomeNote: NoteItem = {
-      id: 'welcome-note',
-      title: 'Welcome to NoteSync! 👋',
-      bodyText: 'NoteSync is your minimal personal second brain. Tap the + button below to quick-capture notes, record voice memos 🎙️, or speak to transcribe directly into text 🎤. Switch to Kanban mode anytime on iPad/Desktop!',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      isReminder: false,
-      reminderDate: null,
-      isCompleted: false,
-      priority: 'High',
-      kanbanStatus: 'To-Do',
-      topicId: 'topic-personal',
-      tags: ['priority', 'review'],
-    };
-    await db.notes.add(welcomeNote);
   }
+
+  // Mark as seeded so welcome note never auto-respawns after being deleted!
+  localStorage.setItem(SEED_KEY, 'true');
 }
 
 // Helpers for tag updates
