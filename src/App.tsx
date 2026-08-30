@@ -70,14 +70,23 @@ export const App: React.FC = () => {
   useEffect(() => {
     seedInitialDataIfNeeded().then(() => {
       checkCloudConnection();
-    });
+    }).catch(err => console.error('Seed error:', err));
 
     const unsubscribe = syncService.onSyncStatus((syncing) => {
       setIsSyncing(syncing);
     });
 
+    const handleFocus = () => {
+      checkCloudConnection();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
+
     return () => {
       unsubscribe();
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
     };
   }, []);
 
