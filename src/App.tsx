@@ -46,8 +46,11 @@ export const App: React.FC = () => {
   const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState(false);
   const [quickAddColumn, setQuickAddColumn] = useState<KanbanColumn | null>(null);
 
-  // Cloud sync state
-  const [isCloudConnected, setIsCloudConnected] = useState(false);
+  // Cloud sync state - defaults to true because Firebase is pre-configured
+  const [isCloudConnected, setIsCloudConnected] = useState<boolean>(() => {
+    const config = getStoredFirebaseConfig();
+    return Boolean(config && config.apiKey && config.projectId);
+  });
   const [isSyncing, setIsSyncing] = useState(false);
 
   // Dark mode state
